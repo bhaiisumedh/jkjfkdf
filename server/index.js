@@ -6,6 +6,7 @@ import authRoutes from './routes/auth.js';
 import userRoutes from './routes/users.js';
 import donationRoutes from './routes/donations.js';
 import matchingRoutes from './routes/matching.js';
+import adminRoutes from './routes/admin.js';
 import { initializeDatabase } from './database/init.js';
 import { seedDatabase } from './database/seedData.js';
 import { authenticateToken } from './middleware/auth.js';
@@ -34,6 +35,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', authenticateToken, userRoutes);
 app.use('/api/donations', authenticateToken, donationRoutes);
 app.use('/api/matching', authenticateToken, matchingRoutes);
+app.use('/api/admin', authenticateToken, adminRoutes);
 
 // Socket.io connection handling
 io.on('connection', (socket) => {
