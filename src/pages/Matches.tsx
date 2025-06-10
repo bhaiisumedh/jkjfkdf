@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { Users, Heart, MapPin, Clock, Star, Phone, CheckCircle, XCircle } from 'lucide-react';
+import { Users, Heart, MapPin, Clock, Star, Phone, CheckCircle, XCircle, AlertTriangle } from 'lucide-react';
 
 export default function Matches() {
   const { token } = useAuth();
   const [matches, setMatches] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState<number | null>(null);
+  const [showDeclineModal, setShowDeclineModal] = useState<number | null>(null);
+  const [declineReason, setDeclineReason] = useState('');
 
   useEffect(() => {
     fetchMatches();
@@ -27,6 +30,63 @@ export default function Matches() {
       console.error('Failed to fetch matches:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleAcceptMatch = async (matchId: number) => {
+    setActionLoading(matchId);
+    try {
+      const response = await fetch(`http://localhost:3001/api/matching/accept-match/${matchId}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        // Refresh matches list
+        fetchMatches();
+        alert('Match accepted successfully!');
+      } else {
+        const error = await response.json();
+        alert(`Failed to accept match: ${error.error}`);
+      }
+    } catch (error) {
+      console.error('Failed to accept match:', error);
+      alert('Failed to accept match. Please try again.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleDeclineMatch = async (matchId: number) => {
+    setActionLoading(matchId);
+    try {
+      const response = await fetch(`http://localhost:3001/api/matching/decline-match/${matchId}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ reason: declineReason }),
+      });
+
+      if (response.ok) {
+        // Refresh matches list
+        fetchMatches();
+        setShowDeclineModal(null);
+        setDeclineReason('');
+        alert('Match declined successfully.');
+      } else {
+        const error = await response.json();
+        alert(`Failed to decline match: ${error.error}`);
+      }
+    } catch (error) {
+      console.error('Failed to decline match:', error);
+      alert('Failed to decline match. Please try again.');
+    } finally {
+      setActionLoading(null);
     }
   };
 
@@ -187,20 +247,61 @@ export default function Matches() {
                           </div>
                         )}
                       </div>
+
+                      {/* Notes */}
+                      {match.notes && (
+                        <div className="mt-3 p-3 bg-gray-50 rounded-lg">
+                          <p className="text-sm text-gray-700">
+                            <strong>Notes:</strong> {match.notes}
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </div>
                   
                   {/* Action Buttons */}
                   {match.status === 'pending' && (
                     <div className="ml-4 flex flex-col space-y-2">
-                      <button className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-2">
+                      <button
+                        onClick={() => handleAcceptMatch(match.id)}
+                        disabled={actionLoading === match.id}
+                        className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-2 disabled:opacity-50"
+                      >
                         <CheckCircle className="h-4 w-4" />
-                        <span>Accept</span>
+                        <span>{actionLoading === match.id ? 'Accepting...' : 'Accept'}</span>
                       </button>
-                      <button className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors flex items-center space-x-2">
+                      <button
+                        onClick={() => setShowDeclineModal(match.id)}
+                        disabled={actionLoading === match.id}
+                        className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors flex items-center space-x-2 disabled:opacity-50"
+                      >
                         <XCircle className="h-4 w-4" />
                         <span>Decline</span>
                       </button>
+                    </div>
+                  )}
+
+                  {/* Status Indicator for Non-Pending Matches */}
+                  {match.status !== 'pending' && (
+                    <div className="ml-4 flex items-center space-x-2">
+                      {match.status === 'accepted' && (
+                        <div className="flex items-center space-x-2 text-green-600">
+                          <CheckCircle className="h-5 w-5" />
+                          <span className="font-medium">Accepted</span>
+                        </div>
+                      )}
+                      {match.status === 'rejected' && (
+                        <div className="flex items-center space-x-2 text-red-600">
+                          <XCircle className="h-5 w-5" />
+                          <span className="font-medium">Declined</span>
+                        </div>
+                      )}
+                      {match.status === 'completed' && (
+                        <div className="flex items-center space-x-2 text-blue-600">
+                          <CheckCircle className="h-5 w-5" />
+                          <span className="font-medium">Completed</span>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -217,6 +318,49 @@ export default function Matches() {
           </div>
         )}
       </div>
+
+      {/* Decline Modal */}
+      {showDeclineModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 max-w-md w-full mx-4">
+            <div className="flex items-center space-x-3 mb-4">
+              <AlertTriangle className="h-6 w-6 text-red-600" />
+              <h3 className="text-lg font-semibold text-gray-900">Decline Match</h3>
+            </div>
+            
+            <p className="text-gray-600 mb-4">
+              Are you sure you want to decline this match? Please provide a reason (optional):
+            </p>
+            
+            <textarea
+              value={declineReason}
+              onChange={(e) => setDeclineReason(e.target.value)}
+              rows={3}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 mb-4"
+              placeholder="Reason for declining (optional)..."
+            />
+            
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => {
+                  setShowDeclineModal(null);
+                  setDeclineReason('');
+                }}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleDeclineMatch(showDeclineModal)}
+                disabled={actionLoading === showDeclineModal}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
+              >
+                {actionLoading === showDeclineModal ? 'Declining...' : 'Decline Match'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

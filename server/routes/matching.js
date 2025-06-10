@@ -163,6 +163,112 @@ router.post('/create-match', (req, res) => {
   }
 });
 
+// Accept a match
+router.put('/accept-match/:matchId', (req, res) => {
+  try {
+    const matchId = req.params.matchId;
+    const userId = req.user.id;
+
+    // Get match details to verify user is involved
+    const match = db.prepare(`
+      SELECT m.*, d.donor_id, r.recipient_id
+      FROM matches m
+      JOIN donations d ON m.donation_id = d.id
+      JOIN requests r ON m.request_id = r.id
+      WHERE m.id = ?
+    `).get(matchId);
+
+    if (!match) {
+      return res.status(404).json({ error: 'Match not found' });
+    }
+
+    // Check if user is involved in this match
+    if (match.donor_id !== userId && match.recipient_id !== userId) {
+      return res.status(403).json({ error: 'Not authorized to modify this match' });
+    }
+
+    // Update match status
+    const updateMatch = db.prepare(`
+      UPDATE matches 
+      SET status = 'accepted', decision_at = CURRENT_TIMESTAMP, notes = ?
+      WHERE id = ?
+    `);
+
+    updateMatch.run(`Accepted by user ${userId}`, matchId);
+
+    // Update donation status to used
+    db.prepare('UPDATE donations SET status = ? WHERE id = ?').run('used', match.donation_id);
+
+    // Update request status to fulfilled
+    db.prepare('UPDATE requests SET status = ? WHERE id = ?').run('fulfilled', match.request_id);
+
+    // Emit real-time notification
+    const io = req.app.get('io');
+    io.emit('match-accepted', {
+      matchId,
+      donationId: match.donation_id,
+      requestId: match.request_id
+    });
+
+    res.json({ message: 'Match accepted successfully' });
+  } catch (error) {
+    console.error('Accept match error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Decline a match
+router.put('/decline-match/:matchId', (req, res) => {
+  try {
+    const matchId = req.params.matchId;
+    const userId = req.user.id;
+    const { reason } = req.body;
+
+    // Get match details to verify user is involved
+    const match = db.prepare(`
+      SELECT m.*, d.donor_id, r.recipient_id
+      FROM matches m
+      JOIN donations d ON m.donation_id = d.id
+      JOIN requests r ON m.request_id = r.id
+      WHERE m.id = ?
+    `).get(matchId);
+
+    if (!match) {
+      return res.status(404).json({ error: 'Match not found' });
+    }
+
+    // Check if user is involved in this match
+    if (match.donor_id !== userId && match.recipient_id !== userId) {
+      return res.status(403).json({ error: 'Not authorized to modify this match' });
+    }
+
+    // Update match status
+    const updateMatch = db.prepare(`
+      UPDATE matches 
+      SET status = 'rejected', decision_at = CURRENT_TIMESTAMP, notes = ?
+      WHERE id = ?
+    `);
+
+    updateMatch.run(`Declined by user ${userId}: ${reason || 'No reason provided'}`, matchId);
+
+    // Update donation status back to available
+    db.prepare('UPDATE donations SET status = ? WHERE id = ?').run('available', match.donation_id);
+
+    // Emit real-time notification
+    const io = req.app.get('io');
+    io.emit('match-declined', {
+      matchId,
+      donationId: match.donation_id,
+      requestId: match.request_id
+    });
+
+    res.json({ message: 'Match declined successfully' });
+  } catch (error) {
+    console.error('Decline match error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Get matches for user
 router.get('/my-matches', (req, res) => {
   try {
